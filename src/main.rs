@@ -44,9 +44,10 @@ async fn main() {
 
     // Browse localhost:8000/dog/{id}
     let get_dog = warp::path!("dog" / String).map(move |id: String| {
-        match dog_map.read().get(&id) {
-            Some(dog) => warp::reply::json(dog),
-            None => warp::reject::not_found()
+        if let Some(dog) = dog_map.read().get(&id) {
+            Ok(warp::reply::json(&dog))
+        } else {
+            Err(warp::reject::not_found())
         }
     });
 
