@@ -43,7 +43,7 @@ async fn main() {
         .map(|name, age| format!("Hello, {} year old named {}!", age, name));
 
     // Browse localhost:8000/dog/{id}
-    let get_dog = warp::path!("dog" / String).map(move |id: String| {
+    let get_dog = warp::path!("dog" / String).and_then(move |id: String| {
         if let Some(dog) = dog_map.read().get(&id) {
             Ok(warp::reply::json(&dog))
         } else {
