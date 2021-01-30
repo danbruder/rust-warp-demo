@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use warp::Filter;
 use warp::http::StatusCode;
 
 // We need to implement the "Clone" trait in order to
@@ -37,21 +39,23 @@ async fn main() {
     dog_map.insert(id, dog);
 
     let state: State = Arc::new(Mutex::new(dog_map));
-    let cloned_state = warp::any().map(move || state.clone());
 
-    let get_dogs =
-        warp::path!("dog")
-            .and(warp::get())
-            .and(cloned_state.clone())
-            .map(|dog_map: DogMap| {
-                println!("got get: dog_map = {:?}", dog_map);
-                let dogs: Vec<Dog> = dog_map.values().cloned().collect();
-                Ok(warp::reply::json(&dogs))
-            });
+    fn with_state(state: State) -> impl Filter<Extract = (State,), Error = Infallible> {
+        warp::any().map(move || state.clone())
+    }
+
+    let get_dogs = warp::path!("dog")
+        .and(warp::get())
+        .and(with_state(state))
+        .map(|dog_map: DogMap| {
+            println!("got get: dog_map = {:?}", dog_map);
+            let dogs: Vec<Dog> = dog_map.values().cloned().collect();
+            Ok(warp::reply::json(&dogs))
+        });
 
     let get_dog = warp::path!("dog" / String)
         .and(warp::get())
-        .and(cloned_state.clone())
+        .and(with_state(state))
         .map(|id, dog_map: DogMap| {
             println!("got get for id {}, dog_map = {:?}", id, dog_map);
             if let Some(dog) = dog_map.get(&id) {
@@ -61,47 +65,44 @@ async fn main() {
             }
         });
 
-    let create_dog =
-        warp::path!("dog")
-            .and(warp::post())
-            .and(warp::body::json())
-            .and(cloned_state.clone())
-            .map(|new_dog: NewDog, dog_map: DogMap| {
-                println!("got post request with {:?}", new_dog);
-                let id = Uuid::new_v4().to_string();
-                let dog = Dog { id, name: new_dog.name, breed: new_dog.breed};
+    let create_dog = warp::path!("dog")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state(state))
+        .map(|new_dog: NewDog, dog_map: DogMap| {
+            println!("got post request with {:?}", new_dog);
+            let id = Uuid::new_v4().to_string();
+            let dog = Dog { id, name: new_dog.name, breed: new_dog.breed};
+            dog_map.insert(id, dog);
+            //Ok(warp::reply::with_status("success", StatusCode::CREATED))
+            Ok(warp::reply::json(&dog))
+        });
+
+    let update_dog = warp::path!("dog" / String)
+        .and(warp::put())
+        .and(warp::body::json())
+        .and(with_state(state))
+        .map(|id: String, dog: Dog, dog_map: DogMap| {
+            println!("got put request with id {} and {:?}", id, dog);
+            if let Some(dog) = dog_map.get(&id) {
                 dog_map.insert(id, dog);
-                //Ok(warp::reply::with_status("success", StatusCode::CREATED))
                 Ok(warp::reply::json(&dog))
-            });
+            } else {
+                Err(warp::reject::not_found())
+            }
+        });
 
-    let update_dog =
-        warp::path!("dog" / String)
-            .and(warp::put())
-            .and(warp::body::json())
-            .and(cloned_state.clone())
-            .map(|id: String, dog: Dog, dog_map: DogMap| {
-                println!("got put request with id {} and {:?}", id, dog);
-                if let Some(dog) = dog_map.get(&id) {
-                    dog_map.insert(id, dog);
-                    Ok(warp::reply::json(&dog))
-                } else {
-                    Err(warp::reject::not_found())
-                }
-            });
-
-    let delete_dog =
-        warp::path!("dog" / String)
-            .and(warp::delete())
-            .and(cloned_state.clone())
-            .map(|id: String, dog_map: DogMap| {
-                println!("got delete request with id {}", &id);
-                if let Some(_dog) = dog_map.remove(&id) {
-                    Ok(warp::reply::with_status("success", StatusCode::OK))
-                } else {
-                    Ok(warp::reply::with_status("dog not found", StatusCode::NOT_FOUND))
-                }
-            });
+    let delete_dog = warp::path!("dog" / String)
+        .and(warp::delete())
+        .and(with_state(state))
+        .map(|id: String, dog_map: DogMap| {
+            println!("got delete request with id {}", &id);
+            if let Some(_dog) = dog_map.remove(&id) {
+                Ok(warp::reply::with_status("success", StatusCode::OK))
+            } else {
+                Ok(warp::reply::with_status("dog not found", StatusCode::NOT_FOUND))
+            }
+        });
 
     //TODO: Learn how to get this to use TLS/HTTPS.
     let routes = get_dogs.or(get_dog).or(create_dog).or(update_dog).or(delete_dog);
