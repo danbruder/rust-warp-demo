@@ -2,10 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
+//TODO: Switch to using parking_lot::RwLock.
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use warp::Filter;
+use warp::{Filter, Rejection};
 use warp::http::StatusCode;
+use warp::reply::Json;
 
 // We need to implement the "Clone" trait in order to
 // call the "cloned" method in the "get_dogs" route.
@@ -40,24 +42,30 @@ async fn main() {
 
     let state: State = Arc::new(Mutex::new(dog_map));
 
-    fn with_state(state: State) -> impl Filter<Extract = (State,), Error = Infallible> {
+    fn with_state(state: State) -> impl Filter<Extract = (State,), Error = Infallible> + Clone {
         warp::any().map(move || state.clone())
     }
 
     let get_dogs = warp::path!("dog")
         .and(warp::get())
-        .and(with_state(state))
-        .map(|dog_map: DogMap| {
-            println!("got get: dog_map = {:?}", dog_map);
-            let dogs: Vec<Dog> = dog_map.values().cloned().collect();
-            Ok(warp::reply::json(&dogs))
-        });
+        .and(with_state(state.clone()))
+        .and_then(handle_get_dogs);
+
+    // In routes that cannot return an Err,
+    // the compiler cannot infer the error type for the Result.
+    // This must be an async fn instead of a closure passed to and_then
+    // until proper support for async closures is added to Rust.
+    async fn handle_get_dogs(state: State) -> Result<Json, Rejection> {
+        let dog_map = state.lock().await;
+        let dogs: Vec<Dog> = dog_map.values().cloned().collect();
+        Ok(warp::reply::json(&dogs))
+    }
 
     let get_dog = warp::path!("dog" / String)
         .and(warp::get())
-        .and(with_state(state))
-        .map(|id, dog_map: DogMap| {
-            println!("got get for id {}, dog_map = {:?}", id, dog_map);
+        .and(with_state(state.clone()))
+        .and_then(|id, state: State| async move {
+            let dog_map = state.lock().await;
             if let Some(dog) = dog_map.get(&id) {
                 Ok(warp::reply::json(&dog))
             } else {
@@ -68,24 +76,28 @@ async fn main() {
     let create_dog = warp::path!("dog")
         .and(warp::post())
         .and(warp::body::json())
-        .and(with_state(state))
-        .map(|new_dog: NewDog, dog_map: DogMap| {
-            println!("got post request with {:?}", new_dog);
-            let id = Uuid::new_v4().to_string();
-            let dog = Dog { id, name: new_dog.name, breed: new_dog.breed};
-            dog_map.insert(id, dog);
-            //Ok(warp::reply::with_status("success", StatusCode::CREATED))
-            Ok(warp::reply::json(&dog))
-        });
+        .and(with_state(state.clone()))
+        .and_then(handle_create_dog);
+
+    // See the comment above the handle_get_dogs function.
+    async fn handle_create_dog(new_dog: NewDog, state: State) -> Result<Json, Rejection> {
+        let id = Uuid::new_v4().to_string();
+        let dog = Dog { id: id.clone(), name: new_dog.name, breed: new_dog.breed};
+        let mut dog_map = state.lock().await;
+        dog_map.insert(id, dog.clone());
+        //Ok(warp::reply::with_status("success", StatusCode::CREATED))
+        //TODO: How can you set the status to 201 CREATED?
+        Ok(warp::reply::json(&dog))
+    }
 
     let update_dog = warp::path!("dog" / String)
         .and(warp::put())
         .and(warp::body::json())
-        .and(with_state(state))
-        .map(|id: String, dog: Dog, dog_map: DogMap| {
-            println!("got put request with id {} and {:?}", id, dog);
-            if let Some(dog) = dog_map.get(&id) {
-                dog_map.insert(id, dog);
+        .and(with_state(state.clone()))
+        .and_then(|id: String, dog: Dog, state: State| async move {
+            let mut dog_map = state.lock().await;
+            if let Some(_dog) = &dog_map.get(&id) {
+                dog_map.insert(id, dog.clone());
                 Ok(warp::reply::json(&dog))
             } else {
                 Err(warp::reject::not_found())
@@ -94,13 +106,13 @@ async fn main() {
 
     let delete_dog = warp::path!("dog" / String)
         .and(warp::delete())
-        .and(with_state(state))
-        .map(|id: String, dog_map: DogMap| {
-            println!("got delete request with id {}", &id);
+        .and(with_state(state.clone()))
+        .and_then(|id: String, state: State| async move {
+            let mut dog_map = state.lock().await;
             if let Some(_dog) = dog_map.remove(&id) {
                 Ok(warp::reply::with_status("success", StatusCode::OK))
             } else {
-                Ok(warp::reply::with_status("dog not found", StatusCode::NOT_FOUND))
+                Err(warp::reject::not_found())
             }
         });
 
