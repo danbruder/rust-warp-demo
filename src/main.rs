@@ -78,12 +78,6 @@ async fn main() {
         .and(with_state(state.clone()))
         .and_then(handle_create_dog);
 
-    let create_dog_alternative = warp::path!("dog")
-        .and(warp::post())
-        .and(warp::body::json())
-        .and(with_state(state.clone()))
-        .and_then(handle_create_dog_alternative);
-
     // See the comment above the handle_get_dogs function.
     async fn handle_create_dog(
         new_dog: NewDog,
@@ -102,23 +96,29 @@ async fn main() {
         Ok(v)
     }
 
+    // let create_dog_alternative = warp::path!("dog")
+    //     .and(warp::post())
+    //     .and(warp::body::json())
+    //     .and(with_state(state.clone()))
+    //     .and_then(handle_create_dog_alternative);
+
     // See the comment above the handle_get_dogs function.
-    async fn handle_create_dog_alternative(
-        new_dog: NewDog,
-        state: State,
-    ) -> Result<impl Reply, Rejection> {
-        let id = Uuid::new_v4().to_string();
-        let dog = Dog {
-            id: id.clone(),
-            name: new_dog.name,
-            breed: new_dog.breed,
-        };
-        let mut dog_map = state.write();
-        dog_map.insert(id, dog.clone());
-        let j = warp::reply::json(&dog);
-        let v = with_status(j, StatusCode::CREATED);
-        Ok(v)
-    }
+    // async fn handle_create_dog_alternative(
+    //     new_dog: NewDog,
+    //     state: State,
+    // ) -> Result<impl Reply, Rejection> {
+    //     let id = Uuid::new_v4().to_string();
+    //     let dog = Dog {
+    //         id: id.clone(),
+    //         name: new_dog.name,
+    //         breed: new_dog.breed,
+    //     };
+    //     let mut dog_map = state.write();
+    //     dog_map.insert(id, dog.clone());
+    //     let j = warp::reply::json(&dog);
+    //     let v = with_status(j, StatusCode::CREATED);
+    //     Ok(v)
+    // }
 
     let update_dog = warp::path!("dog" / String)
         .and(warp::put())
@@ -150,7 +150,6 @@ async fn main() {
     let routes = get_dogs
         .or(get_dog)
         .or(create_dog)
-        .or(create_dog_alternative)
         .or(update_dog)
         .or(delete_dog);
     warp::serve(routes).run(([127, 0, 0, 1], 1234)).await;
