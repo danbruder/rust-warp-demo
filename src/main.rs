@@ -6,7 +6,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 use warp::{Filter, Rejection};
 use warp::http::StatusCode;
-use warp::reply::Json;
+//use warp::reply::{json, Json, WithStatus, with_status};
+use warp::reply::{Json, with_status};
 
 // We need to implement the "Clone" trait in order to
 // call the "cloned" method in the "get_dogs" route.
@@ -84,9 +85,12 @@ async fn main() {
         let dog = Dog { id: id.clone(), name: new_dog.name, breed: new_dog.breed};
         let mut dog_map = state.write();
         dog_map.insert(id, dog.clone());
-        //Ok(warp::reply::with_status("success", StatusCode::CREATED))
-        //TODO: How can you set the status to 201 CREATED?
         Ok(warp::reply::json(&dog))
+        /*
+        let j = json(&dog);
+        let v = with_status(j, StatusCode::CREATED);
+        Ok(v)
+        */
     }
 
     let update_dog = warp::path!("dog" / String)
@@ -109,7 +113,7 @@ async fn main() {
         .and_then(|id: String, state: State| async move {
             let mut dog_map = state.write();
             if let Some(_dog) = dog_map.remove(&id) {
-                Ok(warp::reply::with_status("success", StatusCode::OK))
+                Ok(with_status("success", StatusCode::OK))
             } else {
                 Err(warp::reject::not_found())
             }
