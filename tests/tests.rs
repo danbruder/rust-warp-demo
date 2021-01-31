@@ -11,21 +11,20 @@ struct Dog {
     name: String,
 }
 
-async fn assert_dog_count(count: usize) -> Result<Vec<Dog>, Box<dyn std::error::Error>> {
-    let dogs = get_all_dogs().await?;
+async fn assert_dog_count(client: &Client, count: usize) -> Result<Vec<Dog>, Box<dyn std::error::Error>> {
+    let dogs = get_all_dogs(client).await?;
     assert_eq!(dogs.len(), count);
     Ok(dogs)
 }
 
-async fn get_all_dogs() -> Result<Vec<Dog>, Box<dyn std::error::Error>> {
-    //TODO: Can you use client. instead of reqwest::?
-    let res = reqwest::get(BASE_URL).await?;
+async fn get_all_dogs(client: &Client) -> Result<Vec<Dog>, Box<dyn std::error::Error>> {
+    let res = client.get(BASE_URL).send().await?;
     let dogs = res.json::<Vec<Dog>>().await?;
     Ok(dogs)
 }
 
 async fn delete_all_dogs(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
-    let dogs = get_all_dogs().await?;
+    let dogs = get_all_dogs(client).await?;
     for dog in dogs {
         let url = format!("{}/{}", BASE_URL, dog.id);
         client.delete(&url).send().await?.text().await?;
@@ -40,7 +39,7 @@ async fn it_uses_endpoints() -> Result<(), Box<dyn std::error::Error>> {
 
     // Delete all the current dogs to start with an empty collection.
     delete_all_dogs(&client).await?;
-    assert_dog_count(0).await?;
+    assert_dog_count(&client, 0).await?;
 
     // Create new dogs.
     for i in 0..count {
@@ -52,7 +51,7 @@ async fn it_uses_endpoints() -> Result<(), Box<dyn std::error::Error>> {
         };
         client.post(BASE_URL).json(&dog).send().await?;
     }
-    let dogs = assert_dog_count(count).await?;
+    let dogs = assert_dog_count(&client, count).await?;
     for dog in &dogs {
         assert!(dog.name.starts_with("name-"));
         assert!(dog.breed.starts_with("breed-"));
@@ -70,7 +69,7 @@ async fn it_uses_endpoints() -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{}/{}", BASE_URL, id);
         client.put(&url).json(&new_dog).send().await?;
     }
-    let dogs = assert_dog_count(count).await?;
+    let dogs = assert_dog_count(&client, count).await?;
     let name_prefix = format!("{}name-", prefix);
     let breed_prefix = format!("{}breed-", prefix);
     for dog in dogs {
@@ -79,7 +78,7 @@ async fn it_uses_endpoints() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     delete_all_dogs(&client).await?;
-    assert_dog_count(0).await?;
+    assert_dog_count(&client, 0).await?;
 
     Ok(())
 }
