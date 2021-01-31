@@ -5,7 +5,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use uuid::Uuid;
 use warp::http::StatusCode;
-use warp::reply::{with_status, Json, Reply, WithStatus};
+use warp::reply::{json, with_status, Json, Reply, WithStatus};
 use warp::{Filter, Rejection};
 
 // We need to implement the "Clone" trait in order to
@@ -82,6 +82,7 @@ async fn main() {
     async fn handle_create_dog(
         new_dog: NewDog,
         state: State,
+        // Or you can use  Result<impl Reply, Rejection> {
     ) -> Result<WithStatus<Json>, Rejection> {
         let id = Uuid::new_v4().to_string();
         let dog = Dog {
@@ -91,34 +92,10 @@ async fn main() {
         };
         let mut dog_map = state.write();
         dog_map.insert(id, dog.clone());
-        let j = warp::reply::json(&dog);
+        let j = json(&dog);
         let v = with_status(j, StatusCode::CREATED);
         Ok(v)
     }
-
-    // let create_dog_alternative = warp::path!("dog")
-    //     .and(warp::post())
-    //     .and(warp::body::json())
-    //     .and(with_state(state.clone()))
-    //     .and_then(handle_create_dog_alternative);
-
-    // See the comment above the handle_get_dogs function.
-    // async fn handle_create_dog_alternative(
-    //     new_dog: NewDog,
-    //     state: State,
-    // ) -> Result<impl Reply, Rejection> {
-    //     let id = Uuid::new_v4().to_string();
-    //     let dog = Dog {
-    //         id: id.clone(),
-    //         name: new_dog.name,
-    //         breed: new_dog.breed,
-    //     };
-    //     let mut dog_map = state.write();
-    //     dog_map.insert(id, dog.clone());
-    //     let j = warp::reply::json(&dog);
-    //     let v = with_status(j, StatusCode::CREATED);
-    //     Ok(v)
-    // }
 
     let update_dog = warp::path!("dog" / String)
         .and(warp::put())
